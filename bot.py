@@ -59,7 +59,11 @@ def home():
     except:
         pass
 
-    html = """<html><head><title>Aggressive Bot</title><style>
+    <html>
+    <head>
+    <title>Aggressive Bot</title>
+    <meta http-equiv="refresh" content="15">
+    <style>
     body { font-family: Arial; padding: 20px; }
     table { width: 100%%; border-collapse: collapse; margin-bottom: 30px; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
