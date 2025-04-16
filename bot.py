@@ -105,7 +105,7 @@ api = tradeapi.REST(API_KEY, SECRET_KEY, BASE_URL, api_version='v2')
 with open("symbols.txt", "r") as f:
     symbols = [line.strip().upper() for line in f if line.strip()]
 
-rsi_buy_threshold = 40
+rsi_buy_threshold = 45
 rsi_sell_threshold = 65
 stop_loss_pct = 0.05
 log_file = "trade_log.txt"
@@ -227,9 +227,44 @@ def trade():
             log_trade(symbol, "buy", current_price)
 
         elif has_position:
-            last_buy_price = get_last_buy_price(symbol)
-            loss_triggered = last_buy_price and current_price <= (1 - stop_loss_pct) * last_buy_price
-            if rsi and rsi > rsi_sell_threshold or loss_triggered:
+           # Track highest price since buy
+trailing_stop_pct = 0.03  # 3% trailing stop
+
+# Load or create file to track highs
+highs_file = f"highs_{symbol}.txt"
+
+# Read the last known high
+if os.path.exists(highs_file):
+    with open(highs_file, "r") as f:
+        try:
+            high_since_buy = float(f.read().strip())
+        except:
+            high_since_buy = current_price
+else:
+    high_since_buy = current_price
+
+# Update high if current price is higher
+if current_price > high_since_buy:
+    high_since_buy = current_price
+    with open(highs_file, "w") as f:
+        f.write(str(high_since_buy))
+
+# Check trailing stop
+trailing_triggered = current_price <= (1 - trailing_stop_pct) * high_since_buy
+
+# Sell if RSI > threshold or trailing stop is hit
+if rsi and rsi > rsi_sell_threshold or trailing_triggered:
+    print(f"📉 SELL triggered for {symbol} — RSI or trailing stop")
+    api.submit_order(
+        symbol=symbol,
+        qty=position.qty,
+        side='sell',
+        type='market',
+        time_in_force='gtc'
+    )
+    log_trade(symbol, "sell", current_price)
+    if os.path.exists(highs_file):
+        os.remove(highs_file)  # Reset high after sell
                 print(f"📤 SELLING {position.qty} shares of {symbol}")
                 api.submit_order(
                     symbol=symbol,
