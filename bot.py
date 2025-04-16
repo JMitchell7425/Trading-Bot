@@ -3,6 +3,25 @@ import datetime
 import time
 import pytz
 import os
+import requests
+from bs4 import BeautifulSoup
+
+def get_top_movers(limit=100):
+    print("🔍 Fetching top movers from Finviz...")
+    url = "https://finviz.com/screener.ashx?v=111&s=ta_topgainers&f=sh_avgvol_o500,sh_price_o5,geo_usa&ft=4"
+    headers = {"User-Agent": "Mozilla/5.0"}
+
+    try:
+        r = requests.get(url, headers=headers)
+        soup = BeautifulSoup(r.content, "html.parser")
+        table = soup.find_all("a", class_="screener-link-primary")
+        symbols = [x.text.strip().upper() for x in table if x.text.isalpha()]
+        top = symbols[:limit]
+        print(f"✅ Retrieved {len(top)} symbols.")
+        return top
+    except Exception as e:
+        print(f"⚠️ Failed to fetch tickers: {e}")
+        return []
 
 MODE = "aggressive"  # Change to "conservative" to switch strategies
 
