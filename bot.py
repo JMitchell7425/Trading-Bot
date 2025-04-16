@@ -227,7 +227,7 @@ def trade():
             log_trade(symbol, "buy", current_price)
 
         elif has_position:
-           # Track highest price since buy
+# Track highest price since buy
 trailing_stop_pct = 0.03  # 3% trailing stop
 
 # Load or create file to track highs
