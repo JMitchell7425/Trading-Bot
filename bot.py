@@ -145,7 +145,7 @@ def get_price_data(symbol):
         return closes, volumes, closes[-1] if closes else None
     except:
         return [], [], None
-        def is_uptrend(closes):
+def is_uptrend(closes):
     if len(closes) < 200:
         return False
     ma50 = sum(closes[-50:]) / 50
