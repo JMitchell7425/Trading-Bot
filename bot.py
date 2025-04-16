@@ -1,58 +1,139 @@
-import alpaca_trade_api as tradeapi
-import datetime
-import time
-import pytz
 import os
+import time
+import datetime
+import pytz
 import requests
 from bs4 import BeautifulSoup
+import alpaca_trade_api as tradeapi
+from flask import Flask, render_template_string
+from threading import Thread
 
+# === Mode: aggressive or conservative ===
+MODE = "aggressive"
+
+# === Load API keys from Render environment ===
+API_KEY = os.getenv("API_KEY")
+SECRET_KEY = os.getenv("SECRET_KEY")
+BASE_URL = os.getenv("BASE_URL")
+
+PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
+PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
+
+# === Bot config ===
+rsi_buy_threshold = 45
+rsi_sell_threshold = 65
+trailing_stop_pct = 0.03
+
+# === Alpaca API setup ===
+api = tradeapi.REST(API_KEY, SECRET_KEY, BASE_URL, api_version='v2')
+
+# === Get dynamic top tickers from Finviz ===
 def get_top_movers(limit=100):
     print("🔍 Fetching top movers from Finviz...")
     url = "https://finviz.com/screener.ashx?v=111&s=ta_topgainers&f=sh_avgvol_o500,sh_price_o5,geo_usa&ft=4"
     headers = {"User-Agent": "Mozilla/5.0"}
-
     try:
         r = requests.get(url, headers=headers)
         soup = BeautifulSoup(r.content, "html.parser")
         table = soup.find_all("a", class_="screener-link-primary")
         symbols = [x.text.strip().upper() for x in table if x.text.isalpha()]
-        top = symbols[:limit]
-        print(f"✅ Retrieved {len(top)} symbols.")
-        return top
+        return symbols[:limit]
     except Exception as e:
-        print(f"⚠️ Failed to fetch tickers: {e}")
+        print(f"⚠️ Failed to fetch symbols: {e}")
         return []
 
-MODE = "aggressive"  # Change to "conservative" to switch strategies
-
-# Load Alpaca keys from environment
-API_KEY = os.getenv("API_KEY")
-SECRET_KEY = os.getenv("SECRET_KEY")
-BASE_URL = os.getenv("BASE_URL")
-
-api = tradeapi.REST(API_KEY, SECRET_KEY, BASE_URL, api_version='v2')
-
-# Load symbols from file
 symbols = get_top_movers(limit=100)
 
-rsi_buy_threshold = 45
-rsi_sell_threshold = 65
-trailing_stop_pct = 0.03  # Default trailing stop % (can be adjusted dynamically)
+# === Flask dashboard ===
+app = Flask('')
 
-def is_market_open_now():
-    now = datetime.datetime.now(pytz.timezone('US/Eastern'))
-    return now.weekday() < 5 and datetime.time(9, 30) <= now.time() <= datetime.time(16, 0)
+@app.route('/')
+def home():
+    trades, positions, chart_labels, chart_data = [], [], [], []
 
-def get_price_data(symbol, limit=100):
+    if os.path.exists("trade_log.txt"):
+        with open("trade_log.txt", "r") as f:
+            for line in f.readlines():
+                parts = line.strip().split(",")
+                if len(parts) == 4:
+                    trades.append({"time": parts[0], "symbol": parts[1], "type": parts[2], "price": float(parts[3])})
+
+    if os.path.exists("portfolio_log.txt"):
+        with open("portfolio_log.txt", "r") as f:
+            for line in f.readlines()[-100:]:
+                t, v = line.strip().split(",")
+                chart_labels.append(t)
+                chart_data.append(v)
+
     try:
-        bars = api.get_bars(symbol, timeframe="5Min", limit=limit)
-        closes = [bar.c for bar in bars]
-        highs = [bar.h for bar in bars]
-        lows = [bar.l for bar in bars]
-        volumes = [bar.v for bar in bars]
-        return closes, highs, lows, volumes
+        raw_positions = api.list_positions()
+        for p in raw_positions:
+            positions.append({
+                "symbol": p.symbol,
+                "qty": p.qty,
+                "avg_entry": p.avg_entry_price,
+                "market_price": p.current_price
+            })
     except:
-        return [], [], [], []
+        pass
+
+    html = """<html><head><title>Aggressive Bot</title><style>
+    body { font-family: Arial; padding: 20px; } table { width: 100%%; border-collapse: collapse; margin-bottom: 30px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; } th { background-color: #f2f2f2; }
+    </style></head><body><h1>🔥 Aggressive Bot Dashboard</h1>
+    <h2>Positions</h2><table><tr><th>Symbol</th><th>Qty</th><th>Avg</th><th>Price</th></tr>
+    {% for p in positions %}<tr><td>{{p.symbol}}</td><td>{{p.qty}}</td><td>${{p.avg_entry}}</td><td>${{p.market_price}}</td></tr>{% endfor %}</table>
+    <h2>Portfolio</h2><canvas id="chart" height="80"></canvas>
+    <h2>Trades</h2><table><tr><th>Time</th><th>Symbol</th><th>Type</th><th>Price</th></tr>
+    {% for t in trades[::-1] %}<tr><td>{{t.time}}</td><td>{{t.symbol}}</td><td>{{t.type}}</td><td>${{t.price}}</td></tr>{% endfor %}</table>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+    const ctx = document.getElementById('chart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: {{ chart_labels|safe }},
+            datasets: [{
+                label: 'Equity ($)',
+                data: {{ chart_data|safe }},
+                borderColor: 'green',
+                fill: false,
+                tension: 0.2
+            }]
+        }
+    });
+    </script></body></html>"""
+    return render_template_string(html, trades=trades, positions=positions, chart_labels=chart_labels, chart_data=chart_data)
+
+def run_web():
+    app.run(host='0.0.0.0', port=8080)
+
+# === Utilities ===
+def send_push(title, message):
+    try:
+        payload = {
+            "token": PUSHOVER_API_TOKEN,
+            "user": PUSHOVER_USER_KEY,
+            "title": title,
+            "message": message
+        }
+        requests.post("https://api.pushover.net/1/messages.json", data=payload)
+    except Exception as e:
+        print(f"Push failed: {e}")
+
+def log_trade(symbol, side, price):
+    with open("trade_log.txt", "a") as f:
+        f.write(f"{datetime.datetime.now().isoformat()},{symbol},{side},{price}\n")
+    send_push("Trade Executed", f"{side.upper()} {symbol} @ ${price:.2f}")
+
+def log_portfolio_value():
+    try:
+        equity = float(api.get_account().equity)
+        timestamp = datetime.datetime.now().isoformat()
+        with open("portfolio_log.txt", "a") as f:
+            f.write(f"{timestamp},{equity}\n")
+    except:
+        pass
 
 def calculate_rsi(prices, period=14):
     if len(prices) < period + 1:
@@ -75,85 +156,71 @@ def calculate_rsi(prices, period=14):
         return 100
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
-def is_uptrend(closes):
-    if len(closes) < 100:
-        return False
-    ma20 = sum(closes[-20:]) / 20
-    ma50 = sum(closes[-50:]) / 50
-    return closes[-1] > ma20 > ma50
 
-def is_downtrend(closes):
-    if len(closes) < 100:
-        return False
-    ma20 = sum(closes[-20:]) / 20
-    ma50 = sum(closes[-50:]) / 50
-    return closes[-1] < ma20 < ma50
+def is_market_open_now():
+    now = datetime.datetime.now(pytz.timezone('US/Eastern'))
+    return now.weekday() < 5 and datetime.time(9, 30) <= now.time() <= datetime.time(16, 0)
+
+def get_price_data(symbol, limit=100):
+    try:
+        bars = api.get_bars(symbol, timeframe="5Min", limit=limit)
+        closes = [bar.c for bar in bars]
+        return closes, closes[-1] if closes else None
+    except:
+        return [], None
 
 def trade():
     for symbol in symbols:
-        closes, highs, lows, volumes = get_price_data(symbol)
-        if not closes or len(closes) < 50:
-            print(f"Skipping {symbol}: insufficient data")
+        closes, current_price = get_price_data(symbol)
+        if not closes or len(closes) < 50 or not current_price:
+            print(f"⏭ Skipping {symbol} — not enough data.")
             continue
 
-        current_price = closes[-1]
         rsi = calculate_rsi(closes)
-        uptrend = is_uptrend(closes)
-        downtrend = is_downtrend(closes)
-
-        print(f"{symbol}: Price=${current_price:.2f}, RSI={rsi}, Uptrend={uptrend}, Downtrend={downtrend}")
-
+        avg_entry = None
         try:
-            position = api.get_position(symbol)
-            qty = int(float(position.qty))
-            side = "long" if float(qty) > 0 else "short"
+            pos = api.get_position(symbol)
+            qty = int(float(pos.qty))
+            avg_entry = float(pos.avg_entry_price)
+            side = "long" if qty > 0 else "short"
         except:
-            position = None
             qty = 0
             side = None
 
-        # === Conservative Mode ===
         if MODE == "conservative":
-            if not position and uptrend and rsi < rsi_buy_threshold:
-                print(f"✅ BUYING 1 share of {symbol} (Conservative)")
+            if not qty and rsi < rsi_buy_threshold:
                 api.submit_order(symbol=symbol, qty=1, side='buy', type='market', time_in_force='gtc')
+                log_trade(symbol, "buy", current_price)
+            elif qty and rsi > rsi_sell_threshold:
+                api.submit_order(symbol=symbol, qty=abs(qty), side='sell', type='market', time_in_force='gtc')
+                log_trade(symbol, "sell", current_price)
 
-            elif position:
-                if rsi and rsi > rsi_sell_threshold:
-                    print(f"📤 SELLING {symbol} (Conservative)")
-                    api.submit_order(symbol=symbol, qty=abs(qty), side='sell', type='market', time_in_force='gtc')
-
-        # === Aggressive Mode ===
         if MODE == "aggressive":
-            if not position:
-                if uptrend and rsi < rsi_buy_threshold:
-                    print(f"📈 LONG ENTRY: {symbol}")
+            if not qty:
+                if rsi and rsi < rsi_buy_threshold:
                     api.submit_order(symbol=symbol, qty=1, side='buy', type='market', time_in_force='gtc')
-                elif downtrend and rsi > 75:
-                    print(f"📉 SHORT ENTRY: {symbol}")
-                    api.submit_order(symbol=symbol, qty=1, side='sell', type='market', time_in_force='gtc')  # Short
-
-            elif position:
-                stop_price = float(position.avg_entry_price) * (1 + trailing_stop_pct if side == "long" else 1 - trailing_stop_pct)
-                trigger_sell = (
-                    (side == "long" and current_price < stop_price) or
-                    (side == "short" and current_price > stop_price)
-                )
-
-                if trigger_sell:
-                    print(f"🔁 EXITING {symbol} — trailing stop hit")
-                    action = 'sell' if side == 'long' else 'buy'
+                    log_trade(symbol, "buy", current_price)
+                elif rsi and rsi > 75:
+                    api.submit_order(symbol=symbol, qty=1, side='sell', type='market', time_in_force='gtc')
+                    log_trade(symbol, "short", current_price)
+            elif qty:
+                stop_price = avg_entry * (1 + trailing_stop_pct if side == "long" else 1 - trailing_stop_pct)
+                exit_condition = (side == "long" and current_price < stop_price) or (side == "short" and current_price > stop_price)
+                if exit_condition:
+                    action = 'sell' if side == "long" else 'buy'
                     api.submit_order(symbol=symbol, qty=abs(qty), side=action, type='market', time_in_force='gtc')
+                    log_trade(symbol, "exit", current_price)
 
 def run_bot():
-    print(f"🧠 Mode: {MODE.upper()} — Bot starting...")
+    print(f"🚦 MODE: {MODE.upper()}")
     while True:
         if is_market_open_now():
-            print("🔄 Checking trades...")
             trade()
+            log_portfolio_value()
         else:
-            print("🕒 Market closed. Sleeping...")
+            print("Market closed — sleeping.")
         time.sleep(30)
 
 if __name__ == "__main__":
+    Thread(target=run_web).start()
     run_bot()
