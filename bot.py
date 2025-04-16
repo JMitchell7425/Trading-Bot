@@ -9,6 +9,8 @@ from bs4 import BeautifulSoup
 import alpaca_trade_api as tradeapi
 
 MODE = "aggressive"  # or "conservative"
+TEST_MODE = False  # Set to True to simulate a test trade
+
 API_KEY = os.getenv("API_KEY")
 SECRET_KEY = os.getenv("SECRET_KEY")
 BASE_URL = os.getenv("BASE_URL")
@@ -170,37 +172,42 @@ def trade(symbols):
 
         print(f"🔍 {symbol}: Price=${current_price:.2f}, RSI={rsi}, Position={position is not None}, Mode={MODE}")
 
+        if not position and TEST_MODE:
+            print(f"🧪 TEST_MODE ON: Simulating BUY for {symbol}")
+            try:
+                api.submit_order(symbol=symbol, qty=1, side='buy', type='market', time_in_force='gtc')
+                log_trade(symbol, "TEST-BUY", current_price)
+                print(f"✅ Test trade submitted for {symbol} at ${current_price}")
+            except Exception as e:
+                print(f"❌ Error placing test trade: {e}")
+            return
+
         if MODE == "conservative":
             if not position and rsi and rsi < rsi_buy_threshold:
-                print(f"📈 Buying {symbol}")
                 api.submit_order(symbol=symbol, qty=1, side='buy', type='market', time_in_force='gtc')
                 log_trade(symbol, "buy", current_price)
             elif position and rsi and rsi > rsi_sell_threshold:
-                print(f"📤 Selling {symbol}")
                 api.submit_order(symbol=symbol, qty=abs(qty), side='sell', type='market', time_in_force='gtc')
                 log_trade(symbol, "sell", current_price)
 
         elif MODE == "aggressive":
             if not position:
                 if rsi and rsi < rsi_buy_threshold:
-                    print(f"🚀 LONG {symbol}")
                     api.submit_order(symbol=symbol, qty=1, side='buy', type='market', time_in_force='gtc')
                     log_trade(symbol, "buy", current_price)
                 elif rsi and rsi > 75:
-                    print(f"🔻 SHORT {symbol}")
                     api.submit_order(symbol=symbol, qty=1, side='sell', type='market', time_in_force='gtc')
                     log_trade(symbol, "short", current_price)
             elif position:
                 stop_price = float(position.avg_entry_price) * (1 + trailing_stop_pct if side == "long" else 1 - trailing_stop_pct)
                 trigger = (side == "long" and current_price < stop_price) or (side == "short" and current_price > stop_price)
                 if trigger:
-                    print(f"⚠️ TRAILING STOP EXIT for {symbol}")
                     action = "sell" if side == "long" else "buy"
                     api.submit_order(symbol=symbol, qty=abs(qty), side=action, type='market', time_in_force='gtc')
                     log_trade(symbol, "exit", current_price)
 
 def run_bot():
-    print(f"🧠 Bot running in {MODE.upper()} mode")
+    print(f"🧠 Bot running in {MODE.upper()} mode | TEST_MODE = {TEST_MODE}")
     while True:
         if is_market_open_now():
             print("🔄 Market open — scanning...")
@@ -214,5 +221,4 @@ def run_bot():
 if __name__ == "__main__":
     Thread(target=run_web).start()
     run_bot()
-
 
