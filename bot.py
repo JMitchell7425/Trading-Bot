@@ -8,8 +8,8 @@ from flask import Flask, render_template_string
 from bs4 import BeautifulSoup
 import alpaca_trade_api as tradeapi
 
-MODE = "aggressive"  # or "conservative"
-TEST_MODE = False  # Set to True to simulate a test trade
+MODE = "aggressive"
+TEST_MODE = False
 
 API_KEY = os.getenv("API_KEY")
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -59,21 +59,30 @@ def home():
     except:
         pass
 
-    <html>
-    <head>
+    html = """<html>
+<head>
     <title>Aggressive Bot</title>
     <meta http-equiv="refresh" content="15">
     <style>
     body { font-family: Arial; padding: 20px; }
     table { width: 100%%; border-collapse: collapse; margin-bottom: 30px; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
-    th { background-color: #f2f2f2; }</style></head>
-    <body><h1>🔥 Aggressive Trading Bot Dashboard</h1>
-    <h2>Positions</h2><table><tr><th>Symbol</th><th>Qty</th><th>Avg</th><th>Current</th></tr>
+    th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <h1>🔥 Aggressive Trading Bot Dashboard</h1>
+    <h2>Positions</h2>
+    <table><tr><th>Symbol</th><th>Qty</th><th>Avg</th><th>Current</th></tr>
     {% for p in positions %}<tr><td>{{p.symbol}}</td><td>{{p.qty}}</td><td>${{p.avg_entry}}</td><td>${{p.market_price}}</td></tr>{% endfor %}</table>
-    <h2>Portfolio</h2><canvas id="chart" height="80"></canvas>
-    <h2>Trade History</h2><table><tr><th>Time</th><th>Symbol</th><th>Type</th><th>Price</th></tr>
+    
+    <h2>Portfolio</h2>
+    <canvas id="chart" height="80"></canvas>
+    
+    <h2>Trade History</h2>
+    <table><tr><th>Time</th><th>Symbol</th><th>Type</th><th>Price</th></tr>
     {% for t in trades[::-1] %}<tr><td>{{t.time}}</td><td>{{t.symbol}}</td><td>{{t.type}}</td><td>${{t.price}}</td></tr>{% endfor %}</table>
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
     const ctx = document.getElementById('chart').getContext('2d');
@@ -90,7 +99,8 @@ def home():
             }]
         }
     });
-    </script></body></html>"""
+    </script>
+</body></html>"""
     return render_template_string(html, trades=trades, positions=positions, chart_labels=chart_labels, chart_data=chart_data)
 
 def run_web():
@@ -110,6 +120,7 @@ def get_top_movers(limit=250):
     except Exception as e:
         print(f"⚠️ Failed to fetch tickers: {e}")
         return []
+
 def get_price_data(symbol, limit=100):
     try:
         bars = api.get_bars(symbol, timeframe="5Min", limit=limit)
