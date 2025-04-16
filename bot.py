@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 import alpaca_trade_api as tradeapi
 
 MODE = "aggressive"  # or "conservative"
-TEST_MODE = True  # Set to True to simulate a test trade
+TEST_MODE = False  # Set to True to simulate a test trade
 
 API_KEY = os.getenv("API_KEY")
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -93,8 +93,6 @@ def run_web():
     app.run(host='0.0.0.0', port=8080)
 
 def get_top_movers(limit=250):
-    print("🧪 TEST_MODE: Returning hardcoded symbol list for testing")
-    return ["AAPL", "NVDA", "AMD", "MSFT", "TSLA"]
     print("🔍 Fetching top movers from Finviz...")
     url = "https://finviz.com/screener.ashx?v=111&s=ta_topgainers&f=sh_avgvol_o500,sh_price_o5,geo_usa&ft=4"
     headers = {"User-Agent": "Mozilla/5.0"}
