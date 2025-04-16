@@ -1,3 +1,5 @@
 flask
 alpaca-trade-api
 pytz
+beautifulsoup4
+requests
