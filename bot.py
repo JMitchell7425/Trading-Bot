@@ -5,8 +5,10 @@ import time
 import pytz
 from flask import Flask, render_template_string
 from threading import Thread
-import os
+import json
 
+# === Load API keys from environment variables ===
+import os
 API_KEY = os.getenv("API_KEY")
 SECRET_KEY = os.getenv("SECRET_KEY")
 BASE_URL = os.getenv("BASE_URL")
@@ -51,31 +53,18 @@ def home():
     except:
         pass
 
-    html = """
-    <html><head><title>Trading Bot Dashboard</title>
-    <style>
+    html = """<html><head><title>Bot Dashboard</title><style>
     body { font-family: Arial; padding: 20px; }
     table { width: 100%%; border-collapse: collapse; margin-bottom: 30px; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
     th { background-color: #f2f2f2; }
-    h1, h2 { color: #333; }
-    </style></head>
-    <body>
-    <h1>🤖 Trading Bot Dashboard</h1>
-    <h2>📈 Current Positions</h2>
-    <table><tr><th>Symbol</th><th>Quantity</th><th>Avg Entry</th><th>Market Price</th></tr>
-    {% for p in positions %}
-    <tr><td>{{p.symbol}}</td><td>{{p.qty}}</td><td>${{p.avg_entry}}</td><td>${{p.market_price}}</td></tr>
-    {% endfor %}
-    </table>
-    <h2>📊 Portfolio Value Growth</h2>
-    <canvas id="portfolioChart" height="80"></canvas>
-    <h2>📝 Trade History</h2>
-    <table><tr><th>Time</th><th>Symbol</th><th>Type</th><th>Price</th></tr>
-    {% for t in trades[::-1] %}
-    <tr><td>{{t.time}}</td><td>{{t.symbol}}</td><td>{{t.type}}</td><td>${{t.price}}</td></tr>
-    {% endfor %}
-    </table>
+    </style></head><body>
+    <h1>📈 Trading Bot Dashboard</h1>
+    <h2>Positions</h2><table><tr><th>Symbol</th><th>Qty</th><th>Avg</th><th>Price</th></tr>
+    {% for p in positions %}<tr><td>{{p.symbol}}</td><td>{{p.qty}}</td><td>${{p.avg_entry}}</td><td>${{p.market_price}}</td></tr>{% endfor %}</table>
+    <h2>Portfolio Chart</h2><canvas id="portfolioChart" height="80"></canvas>
+    <h2>Trade Log</h2><table><tr><th>Time</th><th>Symbol</th><th>Type</th><th>Price</th></tr>
+    {% for t in trades[::-1] %}<tr><td>{{t.time}}</td><td>{{t.symbol}}</td><td>{{t.type}}</td><td>${{t.price}}</td></tr>{% endfor %}</table>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
     const ctx = document.getElementById('portfolioChart').getContext('2d');
@@ -84,7 +73,7 @@ def home():
         data: {
             labels: {{ chart_labels|safe }},
             datasets: [{
-                label: 'Portfolio Value ($)',
+                label: 'Portfolio ($)',
                 data: {{ chart_data|safe }},
                 borderColor: 'green',
                 fill: false,
@@ -92,9 +81,7 @@ def home():
             }]
         }
     });
-    </script>
-    </body></html>
-    """
+    </script></body></html>"""
     return render_template_string(html, trades=trades, positions=positions, chart_labels=chart_labels, chart_data=chart_data)
 
 def run_web():
@@ -107,7 +94,7 @@ with open("symbols.txt", "r") as f:
 
 rsi_buy_threshold = 45
 rsi_sell_threshold = 65
-stop_loss_pct = 0.05
+trailing_stop_pct = 0.03
 log_file = "trade_log.txt"
 
 def log_trade(symbol, side, price):
@@ -116,8 +103,7 @@ def log_trade(symbol, side, price):
 
 def log_portfolio_value():
     try:
-        account = api.get_account()
-        equity = float(account.equity)
+        equity = float(api.get_account().equity)
         timestamp = datetime.datetime.now().isoformat()
         with open("portfolio_log.txt", "a") as f:
             f.write(f"{timestamp},{equity}\n")
@@ -145,6 +131,27 @@ def calculate_rsi(prices, period=14):
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
+def get_price_data(symbol):
+    try:
+        tz = pytz.timezone("US/Eastern")
+        now = datetime.datetime.now(tz)
+        market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+        bars = api.get_bars(symbol, timeframe="1Min", start=market_open.isoformat())
+        closes = [bar.c for bar in bars]
+        volumes = [bar.v for bar in bars]
+        if len(closes) > 200:
+            closes = closes[-200:]
+            volumes = volumes[-200:]
+        return closes, volumes, closes[-1] if closes else None
+    except:
+        return [], [], None
+        def is_uptrend(closes):
+    if len(closes) < 200:
+        return False
+    ma50 = sum(closes[-50:]) / 50
+    ma200 = sum(closes[-200:]) / 200
+    return closes[-1] > ma50 > ma200
+
 def breakout_volume_strategy(closes, volumes):
     if len(closes) < 30 or len(volumes) < 20:
         return False
@@ -153,30 +160,6 @@ def breakout_volume_strategy(closes, volumes):
     avg_volume = sum(volumes[-20:]) / 20
     strong_volume = volumes[-1] > 1.5 * avg_volume
     return breakout and strong_volume
-
-def get_price_data(symbol):
-    try:
-        # Get current time and today's market open (Eastern time)
-        tz = pytz.timezone("US/Eastern")
-        now = datetime.datetime.now(tz)
-        market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
-
-        # Get all 1-min bars since market open
-        bars = api.get_bars(symbol, timeframe="1Min", start=market_open.isoformat())
-
-        closes = [bar.c for bar in bars]
-        volumes = [bar.v for bar in bars]
-
-        # Trim to last 200 bars if more than 200
-        if len(closes) > 200:
-            closes = closes[-200:]
-            volumes = volumes[-200:]
-
-        return closes, volumes, closes[-1] if closes else None
-
-    except Exception as e:
-        print(f"⚠️ Error fetching data for {symbol}: {e}")
-        return [], [], None
 
 def get_last_buy_price(symbol):
     if not os.path.exists(log_file):
@@ -199,19 +182,18 @@ def trade():
             position = api.get_position(symbol)
             has_position = True
         except:
-            position = None
             has_position = False
 
         closes, volumes, current_price = get_price_data(symbol)
-        if not closes or not current_price or len(closes) < 200:
+        if not closes or not current_price:
             print(f"⚠️ Skipping {symbol}: not enough data.")
             continue
 
         rsi = calculate_rsi(closes)
-        uptrend = closes[-1] > sum(closes[-50:]) / 50 > sum(closes[-200:]) / 200
+        uptrend = is_uptrend(closes)
         breakout = breakout_volume_strategy(closes, volumes)
 
-        print(f"{symbol}: Price=${current_price:.2f}, RSI={rsi:.1f}, Uptrend={uptrend}, Breakout={breakout}")
+        print(f"{symbol}: Price=${current_price:.2f}, RSI={rsi}, Uptrend={uptrend}, Breakout={breakout}")
 
         if not has_position and (
             (rsi and rsi < rsi_buy_threshold and uptrend) or breakout
@@ -225,47 +207,32 @@ def trade():
                 time_in_force='gtc'
             )
             log_trade(symbol, "buy", current_price)
+            with open(f"highs_{symbol}.txt", "w") as f:
+                f.write(str(current_price))
 
         elif has_position:
-# Track highest price since buy
-trailing_stop_pct = 0.03  # 3% trailing stop
+            last_buy_price = get_last_buy_price(symbol)
+            trailing_file = f"highs_{symbol}.txt"
 
-# Load or create file to track highs
-highs_file = f"highs_{symbol}.txt"
+            if os.path.exists(trailing_file):
+                with open(trailing_file, "r") as f:
+                    try:
+                        high = float(f.read().strip())
+                    except:
+                        high = current_price
+            else:
+                high = current_price
 
-# Read the last known high
-if os.path.exists(highs_file):
-    with open(highs_file, "r") as f:
-        try:
-            high_since_buy = float(f.read().strip())
-        except:
-            high_since_buy = current_price
-else:
-    high_since_buy = current_price
+            if current_price > high:
+                high = current_price
+                with open(trailing_file, "w") as f:
+                    f.write(str(high))
 
-# Update high if current price is higher
-if current_price > high_since_buy:
-    high_since_buy = current_price
-    with open(highs_file, "w") as f:
-        f.write(str(high_since_buy))
+            trailing_triggered = current_price <= (1 - trailing_stop_pct) * high
+            rsi_exit = rsi and rsi > rsi_sell_threshold
 
-# Check trailing stop
-trailing_triggered = current_price <= (1 - trailing_stop_pct) * high_since_buy
-
-# Sell if RSI > threshold or trailing stop is hit
-if rsi and rsi > rsi_sell_threshold or trailing_triggered:
-    print(f"📉 SELL triggered for {symbol} — RSI or trailing stop")
-    api.submit_order(
-        symbol=symbol,
-        qty=position.qty,
-        side='sell',
-        type='market',
-        time_in_force='gtc'
-    )
-    log_trade(symbol, "sell", current_price)
-    if os.path.exists(highs_file):
-        os.remove(highs_file)  # Reset high after sell
-                print(f"📤 SELLING {position.qty} shares of {symbol}")
+            if trailing_triggered or rsi_exit:
+                print(f"📤 SELLING {symbol} — trailing stop or RSI")
                 api.submit_order(
                     symbol=symbol,
                     qty=position.qty,
@@ -274,14 +241,15 @@ if rsi and rsi > rsi_sell_threshold or trailing_triggered:
                     time_in_force='gtc'
                 )
                 log_trade(symbol, "sell", current_price)
+                if os.path.exists(trailing_file):
+                    os.remove(trailing_file)
             else:
-                print(f"🟡 Holding {symbol} — no sell signal")
+                print(f"📈 Holding {symbol}")
 
-# === Run Loop ===
+# === Start Bot ===
 if __name__ == "__main__":
     Thread(target=run_web).start()
     print("🌀 Starting 30-sec trading loop...")
-
     while True:
         if is_market_open_now():
             print("🔄 Market open — checking trades...")
