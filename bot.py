@@ -156,11 +156,26 @@ def breakout_volume_strategy(closes, volumes):
 
 def get_price_data(symbol):
     try:
-        bars = api.get_bars(symbol, timeframe="1Min", limit=200)
+        # Get current time and today's market open (Eastern time)
+        tz = pytz.timezone("US/Eastern")
+        now = datetime.datetime.now(tz)
+        market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+
+        # Get all 1-min bars since market open
+        bars = api.get_bars(symbol, timeframe="1Min", start=market_open.isoformat())
+
         closes = [bar.c for bar in bars]
         volumes = [bar.v for bar in bars]
+
+        # Trim to last 200 bars if more than 200
+        if len(closes) > 200:
+            closes = closes[-200:]
+            volumes = volumes[-200:]
+
         return closes, volumes, closes[-1] if closes else None
-    except:
+
+    except Exception as e:
+        print(f"⚠️ Error fetching data for {symbol}: {e}")
         return [], [], None
 
 def get_last_buy_price(symbol):
