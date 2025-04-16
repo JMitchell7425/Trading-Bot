@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 import alpaca_trade_api as tradeapi
 
 MODE = "aggressive"  # or "conservative"
-TEST_MODE = False  # Set to True to simulate a test trade
+TEST_MODE = True  # Set to True to simulate a test trade
 
 API_KEY = os.getenv("API_KEY")
 SECRET_KEY = os.getenv("SECRET_KEY")
