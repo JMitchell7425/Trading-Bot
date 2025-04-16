@@ -5,7 +5,11 @@ import time
 import pytz
 from flask import Flask, render_template_string
 from threading import Thread
-from keys import API_KEY, SECRET_KEY, BASE_URL
+import os
+
+API_KEY = os.getenv("API_KEY")
+SECRET_KEY = os.getenv("SECRET_KEY")
+BASE_URL = os.getenv("BASE_URL")
 
 app = Flask('')
 
