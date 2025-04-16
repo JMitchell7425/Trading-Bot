@@ -33,8 +33,7 @@ BASE_URL = os.getenv("BASE_URL")
 api = tradeapi.REST(API_KEY, SECRET_KEY, BASE_URL, api_version='v2')
 
 # Load symbols from file
-with open("symbols.txt", "r") as f:
-    symbols = [line.strip().upper() for line in f if line.strip()]
+symbols = get_top_movers(limit=100)
 
 rsi_buy_threshold = 45
 rsi_sell_threshold = 65
