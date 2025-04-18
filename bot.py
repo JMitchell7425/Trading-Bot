@@ -306,7 +306,16 @@ def dashboard():
     </script>
     </body></html>
     """
-    return render_template_string(html, config=current_config, trades=trades, chart_labels=chart_labels, chart_data=chart_data)
+    import datetime  # Add at the top of your file if not already
+
+return render_template_string(
+    html,
+    config=current_config,
+    trades=trades,
+    chart_labels=chart_labels,
+    chart_data=chart_data,
+    datetime=datetime  # 👈 This fixes the error
+)
 def get_price_data(symbol, limit=100):
     try:
         bars = api.get_bars(symbol, timeframe="1Min", limit=limit)
