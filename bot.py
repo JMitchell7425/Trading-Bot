@@ -266,7 +266,8 @@ def dashboard():
         chart_data=chart_data,
         current_year=current_year
     )
-    @app.route('/update_config', methods=["POST"])
+
+@app.route('/update_config', methods=["POST"])
 def update_config():
     for key in request.form:
         value = request.form[key]
