@@ -307,7 +307,7 @@ def dashboard():
     </body></html>
     """
     return render_template_string(html, config=current_config, trades=trades, chart_labels=chart_labels, chart_data=chart_data)
-    def get_price_data(symbol, limit=100):
+def get_price_data(symbol, limit=100):
     try:
         bars = api.get_bars(symbol, timeframe="1Min", limit=limit)
         closes = [bar.c for bar in bars]
