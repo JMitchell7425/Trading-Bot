@@ -306,7 +306,51 @@ def dashboard():
     </script>
     </body></html>
     """
-    import datetime  # Add at the top of your file if not already
+   import datetime  # Make sure this is near the top of your file
+
+@app.route('/')
+def dashboard():
+    current_config = load_config()
+    with open(watchlist_file, "r") as f:
+        custom_symbols = json.load(f)
+
+    trades, chart_labels, chart_data = [], [], []
+
+    if os.path.exists(log_file):
+        with open(log_file, "r") as f:
+            for line in f.readlines()[-100:]:
+                parts = line.strip().split(",")
+                if len(parts) == 4:
+                    trades.append({
+                        "time": parts[0],
+                        "symbol": parts[1],
+                        "type": parts[2],
+                        "price": float(parts[3])
+                    })
+
+    if os.path.exists(portfolio_log):
+        with open(portfolio_log, "r") as f:
+            for line in f.readlines()[-100:]:
+                t, v = line.strip().split(",")
+                chart_labels.append(t)
+                chart_data.append(v)
+
+    current_year = datetime.datetime.utcnow().year  # FIX: safely compute year in Python
+
+    html = """<!DOCTYPE html>
+    <html>
+    <head>
+        <title>RAVEN Control</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <!-- CSS and style blocks continue here... -->
+        ...
+        <div class="footer">
+            &copy; {{ current_year }} RAVEN Control System Interface
+        </div>
+        ...
+    </body>
+    </html>"""
 
     return render_template_string(
         html,
@@ -314,8 +358,8 @@ def dashboard():
         trades=trades,
         chart_labels=chart_labels,
         chart_data=chart_data,
-        datetime=datetime  # 👈 This fixes the error
-        )
+        current_year=current_year  # <-- Pass it into Jinja
+    )
 def get_price_data(symbol, limit=100):
     try:
         bars = api.get_bars(symbol, timeframe="1Min", limit=limit)
