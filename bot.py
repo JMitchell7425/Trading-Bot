@@ -8,6 +8,7 @@ from threading import Thread
 from flask import Flask, request, jsonify, render_template_string
 from bs4 import BeautifulSoup
 import alpaca_trade_api as tradeapi
+import datetime  # Make sure this is near the top of your file
 
 # ============================
 # 🚀 RAVEN CONTROL STARTUP CORE
@@ -306,8 +307,7 @@ def dashboard():
     </script>
     </body></html>
     """
-   import datetime  # Make sure this is near the top of your file
-
+   
 @app.route('/')
 def dashboard():
     current_config = load_config()
